@@ -297,7 +297,10 @@ class FitDialog(QDialog):
                 cell = atoms.get_cell()
                 cell_map = {'a-axis': 0, 'b-axis': 1, 'c-axis': 2}
                 cv = cell[cell_map[axis_name]]
-                target_dir = cv / np.linalg.norm(cv)
+                cv_len = np.linalg.norm(cv)
+                if cv_len < 1e-9:
+                    raise ValueError(f"Cell vector for {axis_name} has zero length.")
+                target_dir = cv / cv_len
 
             # ---- 3. Translate direction centroid to origin -----------------
             dir_pos = atoms.get_positions()[dir_indices]
@@ -453,6 +456,9 @@ class GroupPickingDialog(QDialog):
 
         self.selected = set()
 
+        # Build connectivity graph once; rebuilt if atoms change
+        self._graph = self._build_graph()
+
         self.setWindowTitle("Select Group")
         self.setModal(False)
         self.resize(300, 160)
@@ -486,14 +492,17 @@ class GroupPickingDialog(QDialog):
         proceed_btn.clicked.connect(self._proceed)
         layout.addWidget(proceed_btn)
 
-    def _pick_cb(self, idx: int):
+    def _build_graph(self) -> nx.Graph:
         atoms = self._atoms[0]
         cutoffs = natural_cutoffs(atoms, mult=1.2)
         nl_ij = neighbor_list('ij', atoms, cutoffs)
         G = nx.Graph()
         G.add_nodes_from(range(len(atoms)))
         G.add_edges_from(zip(nl_ij[0], nl_ij[1]))
-        component = set(nx.node_connected_component(G, idx)) if idx in G else {idx}
+        return G
+
+    def _pick_cb(self, idx: int):
+        component = set(nx.node_connected_component(self._graph, idx))
         if component.issubset(self.selected):
             self.selected -= component
         else:
@@ -719,7 +728,10 @@ class GroupOperationDialog(QDialog):
                     if abs(angle_deg) < 0.01:
                         continue
                     cv = cell[axis_idx]
-                    axis = cv / np.linalg.norm(cv)
+                    cv_len = np.linalg.norm(cv)
+                    if cv_len < 1e-9:
+                        raise ValueError(f"Cell vector {'abc'[axis_idx]} has zero length.")
+                    axis = cv / cv_len
                     rot = Rotation.from_rotvec(np.radians(angle_deg) * axis)
                     for i in self._indices:
                         rel = atoms.positions[i] - centroid

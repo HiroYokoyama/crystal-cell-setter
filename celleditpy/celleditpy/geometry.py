@@ -159,8 +159,8 @@ def compute_principal_axis(positions: np.ndarray) -> np.ndarray:
     """
     centered = positions - positions.mean(axis=0)
     cov = np.cov(centered.T)
-    vals, vecs = np.linalg.eig(cov)
-    return vecs[:, np.argmax(vals)].real
+    vals, vecs = np.linalg.eigh(cov)   # eigh is correct for symmetric matrices
+    return vecs[:, np.argmax(vals)]
 
 
 # ---------------------------------------------------------------------------

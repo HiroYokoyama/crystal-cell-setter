@@ -443,8 +443,9 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         show, n_a, n_b, n_c = self._sc
-        # Only redraw if Show Supercell is active (or checkbox just changed)
-        if not show and self.sender() is not self.supercell_checkbox:
+        # Only redraw if Show Supercell is active (or the checkbox itself changed)
+        sender = self.sender()
+        if not show and sender is not self.supercell_checkbox:
             return
         self.draw_scene_manually(force_reset=False,
                                  cell_center=np.zeros(3),
