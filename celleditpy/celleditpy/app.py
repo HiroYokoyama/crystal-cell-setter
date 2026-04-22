@@ -402,7 +402,7 @@ class CellSetterApp(QMainWindow):
         self._coord_mode = QButtonGroup()
         self._coord_xyz_radio = QRadioButton("XYZ (Å)")
         self._coord_abc_radio = QRadioButton("abc (frac)")
-        self._coord_xyz_radio.setChecked(True)
+        self._coord_abc_radio.setChecked(True)
         self._coord_mode.addButton(self._coord_xyz_radio)
         self._coord_mode.addButton(self._coord_abc_radio)
         mode_row.addWidget(self._coord_xyz_radio)
