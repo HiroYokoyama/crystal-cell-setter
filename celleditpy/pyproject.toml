@@ -10,7 +10,8 @@ name = "CelleditPy"
 version = "0.4.0"
 description = "A GUI tool to set and adjust unit cell parameters for crystal structures."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
     {name = "HiroYokoyama", email = "titech.yoko.hiro@gmail.com"},
 ]
@@ -28,7 +29,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Visualization",
     "Environment :: X11 Applications :: Qt",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 
 # Runtime dependencies
