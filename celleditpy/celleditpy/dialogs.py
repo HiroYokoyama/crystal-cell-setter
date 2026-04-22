@@ -695,7 +695,10 @@ class GroupOperationDialog(QDialog):
                     raise ValueError("Atom indices out of range.")
                 cell = atoms.get_cell()
                 vec = min_image_cart_offset(cell, atoms.positions[idx1], atoms.positions[idx2])
-                axis = vec / np.linalg.norm(vec)
+                mag = np.linalg.norm(vec)
+                if mag < 1e-9:
+                    raise ValueError("Selected atoms are at the same position; cannot define a rotation axis.")
+                axis = vec / mag
                 angle_deg = self._r_spins[0].value()
                 rot = Rotation.from_rotvec(np.radians(angle_deg) * axis)
                 for i in self._indices:

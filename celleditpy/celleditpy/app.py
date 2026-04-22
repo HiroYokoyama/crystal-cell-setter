@@ -689,8 +689,8 @@ class CellSetterApp(QMainWindow):
 
         try:
             self.plotter.camera.reset_clipping_range()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[app] camera reset failed: {exc}")
 
         # Calculate visual centre for camera focal point
         if self.atoms.pbc.any():
