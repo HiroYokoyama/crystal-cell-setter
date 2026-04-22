@@ -4,7 +4,7 @@
 constants.py  –  Application-wide constants for CelleditPy.
 """
 
-VERSION = "0.4.3"
+VERSION = "0.4.2"
 
 # CPK colour palette (element symbol -> hex string).
 # Falls back to DEFAULT (hot pink) for unknown elements.
