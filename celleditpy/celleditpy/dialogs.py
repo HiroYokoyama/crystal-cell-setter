@@ -21,14 +21,11 @@ from PyQt6.QtWidgets import (
     QComboBox, QCheckBox, QDoubleSpinBox, QWidget,
     QButtonGroup, QRadioButton, QMessageBox,
 )
-from PyQt6.QtCore import Qt
-
 from .geometry import (
     rotation_angle_search,
     compute_principal_axis,
     apply_rotation_to_atoms,
     min_image_cart_offset,
-    get_vdw_radii_array,
 )
 
 

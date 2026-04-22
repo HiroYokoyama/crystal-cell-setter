@@ -14,12 +14,12 @@ _pkg_dir = os.path.join(_repo_root, "celleditpy")
 if _pkg_dir not in sys.path:
     sys.path.insert(0, _pkg_dir)
 
-import numpy as np
-import pytest
-from ase import Atoms
-from ase.build import molecule
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+from ase import Atoms  # noqa: E402
+from ase.build import molecule  # noqa: E402
 
-from celleditpy.geometry import (
+from celleditpy.geometry import (  # noqa: E402
     min_image_cart_offset,
     get_vdw_radii_array,
     compute_autofit_cell_params,
@@ -200,7 +200,7 @@ class TestComputeAutofitCellParams:
         """If the cell already has orthogonal angles, they must be kept."""
         params = compute_autofit_cell_params(water)
         assert params['alpha'] == pytest.approx(90.0, abs=0.1)
-        assert params['beta']  == pytest.approx(90.0, abs=0.1)
+        assert params['beta'] == pytest.approx(90.0, abs=0.1)
         assert params['gamma'] == pytest.approx(90.0, abs=0.1)
 
     def test_molecule_fits_inside(self, water):
@@ -246,7 +246,7 @@ class TestComputeAutofitCellParams:
         atoms.set_pbc(True)
         params = compute_autofit_cell_params(atoms)
         assert params['alpha'] == pytest.approx(80.0, abs=0.01)
-        assert params['beta']  == pytest.approx(100.0, abs=0.01)
+        assert params['beta'] == pytest.approx(100.0, abs=0.01)
         assert params['gamma'] == pytest.approx(120.0, abs=0.01)
 
 
@@ -287,7 +287,7 @@ class TestRotationAngleSearch:
         cell = np.eye(3) * 5.0
         axis = np.array([1.0, 0.0, 0.0])
         center = positions.mean(axis=0)
-        best5  = rotation_angle_search(positions, axis, center, cell, [1, 2], step_deg=5)
+        best5 = rotation_angle_search(positions, axis, center, cell, [1, 2], step_deg=5)
         best10 = rotation_angle_search(positions, axis, center, cell, [1, 2], step_deg=10)
         diff = abs(best5 - best10)
         assert diff < np.radians(15)
@@ -457,6 +457,7 @@ class TestReadMolBonds:
 # ---------------------------------------------------------------------------
 # detect_bonds helper (mirrors app.detect_bonds logic, no Qt)
 # ---------------------------------------------------------------------------
+
 
 def _detect_bonds(atoms):
     """Pure-Python version of app.detect_bonds for unit testing."""

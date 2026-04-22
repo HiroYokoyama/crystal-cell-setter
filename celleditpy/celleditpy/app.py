@@ -8,14 +8,13 @@ Heavy computation is delegated to geometry.py; drawing to renderer.py;
 and dialogs to dialogs.py.
 """
 
-import sys
 import copy
 import numpy as np
 import pyvista as pv
 from scipy.spatial.transform import Rotation
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QFileDialog, QLabel, QGridLayout, QDoubleSpinBox,
     QMessageBox, QSizePolicy, QInputDialog, QComboBox,
     QTabWidget, QCheckBox, QButtonGroup, QRadioButton, QLineEdit,
@@ -33,7 +32,6 @@ from ase.build import make_supercell
 from .constants import VERSION
 from .geometry import (
     min_image_cart_offset,
-    get_vdw_radii_array,
     compute_autofit_cell_params,
     rotation_angle_search,
     apply_rotation_to_atoms,
@@ -42,7 +40,6 @@ from .geometry import (
 from .renderer import (
     draw_origin_label, draw_atoms, draw_bonds,
     draw_atom_labels, draw_cell, make_selection_glyphs,
-    MESH_PROPS,
 )
 from .dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
 
@@ -404,7 +401,7 @@ class CellSetterApp(QMainWindow):
         self.camera_buttons = {}
         for i, label in enumerate(['a', 'b', 'c', 'a*', 'b*', 'c*']):
             btn = QPushButton(label)
-            btn.clicked.connect(lambda checked, l=label: self.set_camera_along_axis(l))
+            btn.clicked.connect(lambda checked, lbl=label: self.set_camera_along_axis(lbl))
             btn.setEnabled(False)
             cam_grid.addWidget(btn, i // 3, i % 3)
             self.camera_buttons[label] = btn
@@ -758,7 +755,7 @@ class CellSetterApp(QMainWindow):
         mask[idx] = False
         # Carry forward bond data, removing bonds that referenced this atom
         if self.atoms.info.get('_bond_pairs'):
-            pairs  = self.atoms.info['_bond_pairs']
+            pairs = self.atoms.info['_bond_pairs']
             orders = self.atoms.info.get('_bond_orders', [1] * len(pairs))
             new_pairs, new_orders = [], []
             for (a, b), o in zip(pairs, orders):
@@ -769,7 +766,7 @@ class CellSetterApp(QMainWindow):
                 b2 = b - (1 if b > idx else 0)
                 new_pairs.append((a2, b2))
                 new_orders.append(o)
-            self.atoms.info['_bond_pairs']  = new_pairs
+            self.atoms.info['_bond_pairs'] = new_pairs
             self.atoms.info['_bond_orders'] = new_orders
         self.atoms = self.atoms[mask]
         self._edit_selected_idx = None
@@ -794,7 +791,7 @@ class CellSetterApp(QMainWindow):
             order_map = {'None (remove)': 0, 'Single': 1, 'Double': 2, 'Triple': 3}
             order = order_map[self._bond_order_combo.currentText()]
 
-            pairs  = list(self.atoms.info.get('_bond_pairs',  []))
+            pairs = list(self.atoms.info.get('_bond_pairs', []))
             orders = list(self.atoms.info.get('_bond_orders', []))
 
             # Normalise pair so (min, max) is canonical
@@ -815,7 +812,7 @@ class CellSetterApp(QMainWindow):
                 pairs.append((i1, i2))     # add
                 orders.append(order)
 
-            self.atoms.info['_bond_pairs']  = pairs
+            self.atoms.info['_bond_pairs'] = pairs
             self.atoms.info['_bond_orders'] = orders
             self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
 
@@ -904,8 +901,9 @@ class CellSetterApp(QMainWindow):
         from ase import Atoms as _Atoms
         from ase.geometry import cellpar_to_cell
         p = {name: sb.value() for name, sb in self.param_inputs.items()}
-        cell = cellpar_to_cell([p['a'], p['b'], p['c'],
-                                 p['alpha'], p['beta'], p['gamma']])
+        cell = cellpar_to_cell([
+            p['a'], p['b'], p['c'], p['alpha'], p['beta'], p['gamma'],
+        ])
         self.atoms = _Atoms(cell=cell, pbc=True)
         self._enable_controls(True)
         self.enable_plot_picking()
@@ -929,7 +927,7 @@ class CellSetterApp(QMainWindow):
             if file_name.lower().endswith('.mol'):
                 pairs, orders = read_mol_bonds(file_name)
                 if pairs:
-                    self.atoms.info['_bond_pairs']  = pairs
+                    self.atoms.info['_bond_pairs'] = pairs
                     self.atoms.info['_bond_orders'] = orders
 
             cell_params = self.atoms.cell.cellpar()
@@ -1034,7 +1032,7 @@ class CellSetterApp(QMainWindow):
                 # make_supercell does not copy info – carry bond data forward so
                 # the renderer can use explicit connectivity for the supercell.
                 if self.atoms.info.get('_bond_pairs'):
-                    pairs  = self.atoms.info['_bond_pairs']
+                    pairs = self.atoms.info['_bond_pairs']
                     orders = self.atoms.info.get('_bond_orders', [1] * len(pairs))
                     n_orig = len(self.atoms)
                     n_reps = n_a * n_b * n_c
@@ -1044,7 +1042,7 @@ class CellSetterApp(QMainWindow):
                         for (i, j), o in zip(pairs, orders):
                             sc_pairs.append((i + off, j + off))
                             sc_orders.append(o)
-                    atoms_draw.info['_bond_pairs']  = sc_pairs
+                    atoms_draw.info['_bond_pairs'] = sc_pairs
                     atoms_draw.info['_bond_orders'] = sc_orders
             except Exception as exc:
                 print(f"[app] Supercell error: {exc}")
@@ -1220,7 +1218,7 @@ class CellSetterApp(QMainWindow):
                     seen.add(key)
                     pairs.append(key)
                     orders.append(1)
-            self.atoms.info['_bond_pairs']  = pairs
+            self.atoms.info['_bond_pairs'] = pairs
             self.atoms.info['_bond_orders'] = orders
             self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
         except Exception as exc:

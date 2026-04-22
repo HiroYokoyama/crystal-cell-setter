@@ -10,7 +10,6 @@ or ASE Atoms objects.
 import numpy as np
 from scipy.spatial.transform import Rotation
 from ase.data import vdw_radii
-from ase.geometry import cellpar_to_cell
 
 
 # ---------------------------------------------------------------------------

@@ -67,7 +67,7 @@ def draw_atoms(plotter, atoms_to_draw) -> None:
     plotter.add_mesh(glyphs, scalars='colors', rgb=True, **MESH_PROPS)
 
 
-_BOND_RADIUS   = 0.10   # Å – tube radius for single bonds
+_BOND_RADIUS = 0.10    # Å – tube radius for single bonds
 _DOUBLE_OFFSET = 0.14   # Å – half-separation between double-bond tubes
 _TRIPLE_OFFSET = 0.16   # Å – half-separation between outer triple-bond tubes
 
@@ -103,7 +103,7 @@ def draw_bonds(plotter, atoms_to_draw) -> None:
 
     try:
         info = getattr(atoms_to_draw, 'info', {}) or {}
-        explicit_pairs  = info.get('_bond_pairs')
+        explicit_pairs = info.get('_bond_pairs')
         explicit_orders = info.get('_bond_orders')
         n = len(positions)
 
@@ -218,7 +218,7 @@ def make_selection_glyphs(atoms, indices: list):
     radii = []
     for i in idx_arr:
         n = nums[i]
-        r = vdw_radii[n] * 0.39 if (n < vdw_max and vdw_radii[n] > 0) else 0.4 * 0.39
+        r = vdw_radii[n] * 0.39 if (n < vdw_max and vdw_radii[n] > 0) else 0.4
         radii.append(r)
     src = pv.PolyData(positions)
     src['radii'] = np.array(radii)
