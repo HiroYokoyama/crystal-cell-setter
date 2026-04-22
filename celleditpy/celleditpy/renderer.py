@@ -12,7 +12,10 @@ import pyvista as pv
 from ase.data import vdw_radii, atomic_numbers
 from ase.neighborlist import NeighborList, natural_cutoffs
 
-from .constants import CPK_COLORS
+try:
+    from .constants import CPK_COLORS
+except ImportError:
+    from constants import CPK_COLORS
 
 # ---------------------------------------------------------------------------
 # Shared mesh properties

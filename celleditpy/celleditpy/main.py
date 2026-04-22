@@ -11,7 +11,14 @@ DOI     : 10.5281/zenodo.17620125
 
 import sys
 from PyQt6.QtWidgets import QApplication
-from .app import CellSetterApp
+
+# Support both `python main.py` (direct) and `python -m celleditpy` / installed CLI.
+try:
+    from .app import CellSetterApp
+except ImportError:
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from celleditpy.app import CellSetterApp
 
 
 def run_app():

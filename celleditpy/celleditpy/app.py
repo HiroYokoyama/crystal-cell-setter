@@ -27,20 +27,36 @@ import ase.io
 from ase.geometry import cellpar_to_cell
 from ase.build import make_supercell
 
-from .constants import VERSION
-from .geometry import (
-    min_image_cart_offset,
-    get_vdw_radii_array,
-    compute_autofit_cell_params,
-    rotation_angle_search,
-    apply_rotation_to_atoms,
-)
-from .renderer import (
-    draw_origin_label, draw_atoms, draw_bonds,
-    draw_atom_labels, draw_cell, make_selection_glyphs,
-    MESH_PROPS,
-)
-from .dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
+try:
+    from .constants import VERSION
+    from .geometry import (
+        min_image_cart_offset,
+        get_vdw_radii_array,
+        compute_autofit_cell_params,
+        rotation_angle_search,
+        apply_rotation_to_atoms,
+    )
+    from .renderer import (
+        draw_origin_label, draw_atoms, draw_bonds,
+        draw_atom_labels, draw_cell, make_selection_glyphs,
+        MESH_PROPS,
+    )
+    from .dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
+except ImportError:
+    from constants import VERSION
+    from geometry import (
+        min_image_cart_offset,
+        get_vdw_radii_array,
+        compute_autofit_cell_params,
+        rotation_angle_search,
+        apply_rotation_to_atoms,
+    )
+    from renderer import (
+        draw_origin_label, draw_atoms, draw_bonds,
+        draw_atom_labels, draw_cell, make_selection_glyphs,
+        MESH_PROPS,
+    )
+    from dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
 
 
 # ---------------------------------------------------------------------------

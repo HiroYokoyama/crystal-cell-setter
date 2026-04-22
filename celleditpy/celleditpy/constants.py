@@ -6,7 +6,7 @@ constants.py  –  Application-wide constants for CelleditPy.
 
 from PyQt6.QtGui import QColor
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 # CPK colour palette (element symbol -> QColor).
 # Falls back to DEFAULT (hot pink) for unknown elements.
