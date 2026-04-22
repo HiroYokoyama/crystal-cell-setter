@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QFileDialog, QLabel, QGridLayout, QDoubleSpinBox,
     QMessageBox, QSizePolicy, QInputDialog, QComboBox,
     QTabWidget, QCheckBox, QButtonGroup, QRadioButton, QLineEdit,
+    QSpinBox,
 )
 from PyQt6.QtCore import Qt
 from pyvistaqt import QtInteractor
@@ -77,6 +78,7 @@ class CellSetterApp(QMainWindow):
         self.selection_actor = None       # handle for yellow highlight mesh
         self._supercell_params = (False, 1, 1, 1)
         self._plotter_picking_enabled = False
+        self._edit_selected_idx = None   # atom selected in Edit tab
 
         self._build_ui()
 
@@ -119,9 +121,18 @@ class CellSetterApp(QMainWindow):
         self.view_tab_layout.setSpacing(6)
         self.control_tabs.addTab(self.view_tab, "View")
 
+        self.edit_tab = QWidget()
+        self.edit_tab_layout = QVBoxLayout(self.edit_tab)
+        self.edit_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.edit_tab_layout.setSpacing(6)
+        self.control_tabs.addTab(self.edit_tab, "Edit")
+
         self._build_main_tab()
         self._build_structure_tab()
         self._build_view_tab()
+        self._build_edit_tab()
+
+        self.control_tabs.currentChanged.connect(self._on_tab_changed)
 
         main_layout.addWidget(control_panel)
 
@@ -212,6 +223,20 @@ class CellSetterApp(QMainWindow):
         self.delete_atom_button.clicked.connect(self.open_delete_dialog)
         self.delete_atom_button.setEnabled(False)
         lay.addWidget(self.delete_atom_button)
+
+        self.wrap_button = QPushButton("Wrap Atoms into Cell")
+        self.wrap_button.clicked.connect(self.wrap_atoms_into_cell)
+        self.wrap_button.setEnabled(False)
+        lay.addWidget(self.wrap_button)
+
+        self.complete_mol_button = QPushButton("Complete Molecule")
+        self.complete_mol_button.setToolTip(
+            "Reassemble molecules split by the cell boundary\n"
+            "by unwrapping bonded atoms across periodic images."
+        )
+        self.complete_mol_button.clicked.connect(self.complete_molecule)
+        self.complete_mol_button.setEnabled(False)
+        lay.addWidget(self.complete_mol_button)
 
         lay.addSpacing(20)
         lay.addWidget(QLabel("=== Supercell ==="))
@@ -363,6 +388,87 @@ class CellSetterApp(QMainWindow):
             self.camera_buttons[label] = btn
         lay.addWidget(cam_group)
 
+    # -- Edit tab ------------------------------------------------------------
+
+    def _build_edit_tab(self):
+        lay = self.edit_tab_layout
+
+        # ---- Atom editor ---------------------------------------------------
+        lay.addWidget(QLabel("=== Atom Editor ==="))
+        lay.addWidget(QLabel("Click an atom in the 3D view to select it."))
+
+        self._edit_idx_label = QLabel("Selected: none")
+        lay.addWidget(self._edit_idx_label)
+
+        elem_row = QHBoxLayout()
+        elem_row.addWidget(QLabel("Element:"))
+        self._edit_elem_combo = QComboBox()
+        self._edit_elem_combo.setEditable(True)
+        self._edit_elem_combo.addItems([
+            'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne',
+            'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar',
+            'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn',
+            'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr',
+            'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
+            'In', 'Sn', 'Sb', 'Te', 'I', 'Xe',
+            'Cs', 'Ba', 'La', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg',
+            'Tl', 'Pb', 'Bi',
+        ])
+        elem_row.addWidget(self._edit_elem_combo)
+        lay.addLayout(elem_row)
+
+        frac_group = QWidget()
+        frac_grid = QGridLayout(frac_group)
+        frac_grid.addWidget(QLabel("Fractional position (0–1):"), 0, 0, 1, 2)
+        self._edit_frac_spins = []
+        for i, label in enumerate(['a', 'b', 'c']):
+            sb = QDoubleSpinBox()
+            sb.setRange(0.0, 1.0)
+            sb.setDecimals(5)
+            sb.setSingleStep(0.01)
+            frac_grid.addWidget(QLabel(f"{label}:"), i + 1, 0)
+            frac_grid.addWidget(sb, i + 1, 1)
+            self._edit_frac_spins.append(sb)
+        lay.addWidget(frac_group)
+
+        self._apply_atom_btn = QPushButton("Apply Atom Changes")
+        self._apply_atom_btn.clicked.connect(self._apply_atom_edit)
+        self._apply_atom_btn.setEnabled(False)
+        lay.addWidget(self._apply_atom_btn)
+
+        lay.addSpacing(16)
+
+        # ---- Bond editor ---------------------------------------------------
+        lay.addWidget(QLabel("=== Bond Editor ==="))
+
+        bond_group = QWidget()
+        bond_grid = QGridLayout(bond_group)
+
+        bond_grid.addWidget(QLabel("Atom 1:"), 0, 0)
+        self._bond_idx1 = QSpinBox()
+        self._bond_idx1.setMinimum(0)
+        self._bond_idx1.setMaximum(9999)
+        bond_grid.addWidget(self._bond_idx1, 0, 1)
+
+        bond_grid.addWidget(QLabel("Atom 2:"), 1, 0)
+        self._bond_idx2 = QSpinBox()
+        self._bond_idx2.setMinimum(0)
+        self._bond_idx2.setMaximum(9999)
+        bond_grid.addWidget(self._bond_idx2, 1, 1)
+
+        bond_grid.addWidget(QLabel("Order:"), 2, 0)
+        self._bond_order_combo = QComboBox()
+        self._bond_order_combo.addItems(['None (remove)', 'Single', 'Double', 'Triple'])
+        self._bond_order_combo.setCurrentIndex(1)
+        bond_grid.addWidget(self._bond_order_combo, 2, 1)
+
+        lay.addWidget(bond_group)
+
+        self._set_bond_btn = QPushButton("Set Bond")
+        self._set_bond_btn.clicked.connect(self._set_bond)
+        self._set_bond_btn.setEnabled(False)
+        lay.addWidget(self._set_bond_btn)
+
     # ==========================================================================
     # Label refresh helpers
     # ==========================================================================
@@ -417,13 +523,17 @@ class CellSetterApp(QMainWindow):
             self.save_button, self.apply_cell_button, self.optimize_button,
             self.optimize_coord_button, self.fix_atom0_button,
             self.fit_to_cell_button, self.delete_atom_button,
+            self.wrap_button, self.complete_mol_button,
             self.toggle_indices_button, self.reset_camera_button,
+            self._set_bond_btn,
         ]:
             btn.setEnabled(enabled)
         for btn in self.camera_buttons.values():
             btn.setEnabled(enabled)
         for sb in self.translate_spinboxes + self.rotate_spinboxes:
             sb.setEnabled(enabled)
+        if not enabled:
+            self._apply_atom_btn.setEnabled(False)
 
     # ==========================================================================
     # Supercell
@@ -450,6 +560,118 @@ class CellSetterApp(QMainWindow):
         self.draw_scene_manually(force_reset=False,
                                  cell_center=np.zeros(3),
                                  draw_supercell=show)
+
+    # ==========================================================================
+    # Edit tab: tab-switch, atom pick, apply, bond set
+    # ==========================================================================
+
+    _EDIT_TAB_INDEX = 3
+
+    def _on_tab_changed(self, tab_idx: int):
+        if self.atoms is None:
+            return
+        if tab_idx == self._EDIT_TAB_INDEX:
+            self.picking_callback = self._on_edit_atom_picked
+            self.enable_plot_picking()
+        else:
+            if self.picking_callback is self._on_edit_atom_picked:
+                self.picking_callback = None
+
+    def _on_edit_atom_picked(self, idx: int):
+        self._edit_selected_idx = idx
+        sym = self.atoms[idx].symbol
+        self._edit_idx_label.setText(f"Selected: atom {idx}  ({sym})")
+        self._edit_elem_combo.setCurrentText(sym)
+
+        # Fractional coordinates
+        if self.atoms.pbc.any():
+            frac = self.atoms.get_scaled_positions()[idx]
+        else:
+            cell = self.atoms.get_cell()
+            cell_array = np.array(cell)
+            if np.linalg.matrix_rank(cell_array) == 3:
+                frac = np.linalg.solve(cell_array.T, self.atoms.positions[idx])
+            else:
+                frac = np.zeros(3)
+
+        for sb, v in zip(self._edit_frac_spins, frac):
+            sb.blockSignals(True)
+            sb.setValue(float(np.clip(v, 0.0, 1.0)))
+            sb.blockSignals(False)
+
+        # Pre-fill bond idx1 with the selected atom for convenience
+        self._bond_idx1.setValue(idx)
+        self._apply_atom_btn.setEnabled(True)
+        self.draw_selection_markers([idx])
+
+    def _apply_atom_edit(self):
+        if self._edit_selected_idx is None or self.atoms is None:
+            return
+        idx = self._edit_selected_idx
+        try:
+            new_sym = self._edit_elem_combo.currentText().strip().capitalize()
+            # Validate symbol via ASE
+            from ase import Atom as _Atom
+            _Atom(new_sym)
+            self.atoms[idx].symbol = new_sym
+
+            # Convert fractional → Cartesian
+            cell = np.array(self.atoms.get_cell())
+            frac = np.array([sb.value() for sb in self._edit_frac_spins])
+            self.atoms.positions[idx] = frac @ cell
+
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+            self._edit_idx_label.setText(
+                f"Selected: atom {idx}  ({new_sym})  — applied"
+            )
+            self.draw_selection_markers([idx])
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to apply atom edit:\n{exc}")
+
+    def _set_bond(self):
+        if self.atoms is None:
+            return
+        try:
+            i1 = self._bond_idx1.value()
+            i2 = self._bond_idx2.value()
+            n = len(self.atoms)
+            if not (0 <= i1 < n and 0 <= i2 < n):
+                raise ValueError(f"Atom indices must be 0–{n - 1}.")
+            if i1 == i2:
+                raise ValueError("Atom 1 and Atom 2 must be different.")
+
+            order_map = {'None (remove)': 0, 'Single': 1, 'Double': 2, 'Triple': 3}
+            order = order_map[self._bond_order_combo.currentText()]
+
+            pairs  = list(self.atoms.info.get('_bond_pairs',  []))
+            orders = list(self.atoms.info.get('_bond_orders', []))
+
+            # Normalise pair so (min, max) is canonical
+            key = (min(i1, i2), max(i1, i2))
+            existing = next(
+                (k for k, (a, b) in enumerate(pairs)
+                 if (min(a, b), max(a, b)) == key),
+                None,
+            )
+
+            if order == 0:          # remove
+                if existing is not None:
+                    pairs.pop(existing)
+                    orders.pop(existing)
+            elif existing is not None:
+                orders[existing] = order   # update
+            else:
+                pairs.append((i1, i2))     # add
+                orders.append(order)
+
+            self.atoms.info['_bond_pairs']  = pairs
+            self.atoms.info['_bond_orders'] = orders
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+
+        except ValueError as exc:
+            QMessageBox.warning(self, "Input Error", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to set bond:\n{exc}")
 
     # ==========================================================================
     # PyVista picking helpers
@@ -772,6 +994,76 @@ class CellSetterApp(QMainWindow):
             self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Shift failed:\n{exc}")
+
+    def wrap_atoms_into_cell(self):
+        """Wrap all atom positions back into the unit cell (fractional coords → [0,1))."""
+        if self.atoms is None:
+            return
+        if not self.atoms.pbc.any():
+            QMessageBox.warning(self, "Warning", "Cell is not set.")
+            return
+        try:
+            self.atoms.wrap()
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Wrap failed:\n{exc}")
+
+    def complete_molecule(self):
+        """Reassemble molecules split by the cell boundary.
+
+        Uses a BFS over bonded neighbours: starting from atom 0, each bonded
+        neighbour is placed at the minimum-image position relative to its already-
+        placed partner, so split molecules are stitched back together.
+        """
+        if self.atoms is None:
+            return
+        if not self.atoms.pbc.any():
+            QMessageBox.warning(self, "Warning", "Cell is not set.")
+            return
+        try:
+            from ase.neighborlist import natural_cutoffs, neighbor_list as _nl
+            atoms = self.atoms
+            cell = atoms.get_cell()
+            n = len(atoms)
+
+            # Build adjacency from explicit bonds if available, else distance cutoffs
+            if atoms.info.get('_bond_pairs'):
+                adj = {i: [] for i in range(n)}
+                for (a, b) in atoms.info['_bond_pairs']:
+                    adj[a].append(b)
+                    adj[b].append(a)
+            else:
+                cutoffs = natural_cutoffs(atoms, mult=1.15)
+                ii, jj = _nl('ij', atoms, cutoffs)
+                adj = {i: [] for i in range(n)}
+                for a, b in zip(ii, jj):
+                    adj[a].append(b)
+
+            positions = atoms.positions.copy()
+            visited = np.zeros(n, dtype=bool)
+
+            for start in range(n):
+                if visited[start]:
+                    continue
+                queue = [start]
+                visited[start] = True
+                while queue:
+                    i = queue.pop(0)
+                    for j in adj[i]:
+                        if visited[j]:
+                            continue
+                        # Place j at minimum-image distance from i
+                        diff = positions[j] - positions[i]
+                        frac = np.linalg.solve(cell.T, diff)
+                        frac -= np.round(frac)
+                        positions[j] = positions[i] + frac @ np.array(cell)
+                        visited[j] = True
+                        queue.append(j)
+
+            atoms.positions = positions
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Complete molecule failed:\n{exc}")
 
     def apply_translation(self):
         if self.atoms is None:
