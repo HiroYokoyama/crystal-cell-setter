@@ -23,22 +23,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-try:
-    from .geometry import (
-        rotation_angle_search,
-        compute_principal_axis,
-        apply_rotation_to_atoms,
-        min_image_cart_offset,
-        get_vdw_radii_array,
-    )
-except ImportError:
-    from geometry import (
-        rotation_angle_search,
-        compute_principal_axis,
-        apply_rotation_to_atoms,
-        min_image_cart_offset,
-        get_vdw_radii_array,
-    )
+from .geometry import (
+    rotation_angle_search,
+    compute_principal_axis,
+    apply_rotation_to_atoms,
+    min_image_cart_offset,
+    get_vdw_radii_array,
+)
 
 
 # ---------------------------------------------------------------------------

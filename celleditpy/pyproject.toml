@@ -1,44 +1,90 @@
 [build-system]
-requires = [
-    "setuptools>=61.0",
-    "wheel"
-]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+# ---------------------------------------------------------------------------
+# Project metadata
+# ---------------------------------------------------------------------------
 [project]
 name = "CelleditPy"
 version = "0.4.0"
-authors = [
-  { name="HiroYokoyama", email="titech.yoko.hiro@gmail.com" },
-]
-description = "A GUI tool to set and adjust unit cell parameters for molecular structures."
-readme = "README.md" 
+description = "A GUI tool to set and adjust unit cell parameters for crystal structures."
+readme = "README.md"
 license = {file = "LICENSE"}
+authors = [
+    {name = "HiroYokoyama", email = "titech.yoko.hiro@gmail.com"},
+]
+requires-python = ">=3.9"
+keywords = ["crystallography", "crystal", "unit cell", "molecular structure", "GUI"]
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Visualization",
     "Environment :: X11 Applications :: Qt",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 
-requires-python = ">=3.8"
-
+# Runtime dependencies
 dependencies = [
-    "numpy",
-    "pyvista",
-    "PyQt6",
-    "pyvistaqt",
-    "ase",
-    "scipy",
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "ase>=3.22",
+    "pyvista>=0.40",
+    "pyvistaqt>=0.9",
+    "PyQt6>=6.3",
+    "networkx>=2.8",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+dev = [
+    "CelleditPy[test]",
+    "ruff",
+    "mypy",
 ]
 
 [project.urls]
-Homepage = "https://github.com/HiroYokoyama/crystal-cell-settler"
-Repository = "https://github.com/HiroYokoyama/crystal-cell-settler"
+Homepage   = "https://github.com/HiroYokoyama/crystal-cell-setter"
+Repository = "https://github.com/HiroYokoyama/crystal-cell-setter"
+"Bug Tracker" = "https://github.com/HiroYokoyama/crystal-cell-setter/issues"
 
+# ---------------------------------------------------------------------------
+# Entry points
+# ---------------------------------------------------------------------------
 [project.scripts]
 celleditpy = "celleditpy.main:run_app"
 
+# ---------------------------------------------------------------------------
+# Package discovery
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["celleditpy*"]
 
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["../tests"]
+addopts   = "-v --tb=short"
+
+# ---------------------------------------------------------------------------
+# Ruff (linter / formatter)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

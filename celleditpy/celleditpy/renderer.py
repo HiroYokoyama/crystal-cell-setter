@@ -12,10 +12,7 @@ import pyvista as pv
 from ase.data import vdw_radii, atomic_numbers
 from ase.neighborlist import NeighborList, natural_cutoffs
 
-try:
-    from .constants import CPK_COLORS
-except ImportError:
-    from constants import CPK_COLORS
+from .constants import CPK_COLORS
 
 # ---------------------------------------------------------------------------
 # Shared mesh properties
@@ -70,19 +67,47 @@ def draw_atoms(plotter, atoms_to_draw) -> None:
 
 
 def draw_bonds(plotter, atoms_to_draw) -> None:
-    """Render chemical bonds as grey tubes (stick model)."""
+    """Render chemical bonds as grey tubes (stick model).
+
+    Uses explicit bond pairs stored in ``atoms_to_draw.info['_bond_pairs']``
+    (set when loading a MOL file) when available.  Falls back to
+    distance-based detection (ASE NeighborList) for CIF and other formats.
+    """
     positions = atoms_to_draw.get_positions()
+    if len(positions) < 2:
+        return
+
     try:
-        cutoffs = natural_cutoffs(atoms_to_draw)
-        nl = NeighborList(cutoffs, self_interaction=False, bothways=True)
-        nl.update(atoms_to_draw)
-        coo = nl.get_connectivity_matrix().tocoo()
-        if coo.nnz == 0:
+        # --- Prefer explicit connectivity from the source file --------------
+        explicit = atoms_to_draw.info.get('_bond_pairs') if hasattr(atoms_to_draw, 'info') else None
+        if explicit:
+            # Filter out-of-range indices (can happen after atom deletion)
+            n = len(positions)
+            pairs = [(i, j) for i, j in explicit if 0 <= i < n and 0 <= j < n and i != j]
+            # Deduplicate (keep i < j)
+            seen = set()
+            rows, cols = [], []
+            for i, j in pairs:
+                key = (min(i, j), max(i, j))
+                if key not in seen:
+                    seen.add(key)
+                    rows.append(key[0])
+                    cols.append(key[1])
+        else:
+            # --- Distance-based fallback (CIF / no explicit bonds) ----------
+            cutoffs = natural_cutoffs(atoms_to_draw)
+            nl = NeighborList(cutoffs, self_interaction=False, bothways=True)
+            nl.update(atoms_to_draw)
+            coo = nl.get_connectivity_matrix().tocoo()
+            if coo.nnz == 0:
+                return
+            mask = coo.row < coo.col
+            rows = coo.row[mask].tolist()
+            cols = coo.col[mask].tolist()
+
+        if not rows:
             return
-        mask = coo.row < coo.col
-        rows, cols = coo.row[mask], coo.col[mask]
-        if len(rows) == 0:
-            return
+
         lines = np.empty((len(rows), 3), dtype=int)
         lines[:, 0] = 2
         lines[:, 1] = rows
@@ -91,6 +116,7 @@ def draw_bonds(plotter, atoms_to_draw) -> None:
         bond_mesh.lines = lines.flatten()
         tube = bond_mesh.tube(radius=0.10, n_sides=16)
         plotter.add_mesh(tube, color='grey', **MESH_PROPS)
+
     except Exception as exc:
         print(f"[renderer] bond drawing failed: {exc}")
 

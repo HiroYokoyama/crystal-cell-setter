@@ -27,36 +27,21 @@ import ase.io
 from ase.geometry import cellpar_to_cell
 from ase.build import make_supercell
 
-try:
-    from .constants import VERSION
-    from .geometry import (
-        min_image_cart_offset,
-        get_vdw_radii_array,
-        compute_autofit_cell_params,
-        rotation_angle_search,
-        apply_rotation_to_atoms,
-    )
-    from .renderer import (
-        draw_origin_label, draw_atoms, draw_bonds,
-        draw_atom_labels, draw_cell, make_selection_glyphs,
-        MESH_PROPS,
-    )
-    from .dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
-except ImportError:
-    from constants import VERSION
-    from geometry import (
-        min_image_cart_offset,
-        get_vdw_radii_array,
-        compute_autofit_cell_params,
-        rotation_angle_search,
-        apply_rotation_to_atoms,
-    )
-    from renderer import (
-        draw_origin_label, draw_atoms, draw_bonds,
-        draw_atom_labels, draw_cell, make_selection_glyphs,
-        MESH_PROPS,
-    )
-    from dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
+from .constants import VERSION
+from .geometry import (
+    min_image_cart_offset,
+    get_vdw_radii_array,
+    compute_autofit_cell_params,
+    rotation_angle_search,
+    apply_rotation_to_atoms,
+    read_mol_bonds,
+)
+from .renderer import (
+    draw_origin_label, draw_atoms, draw_bonds,
+    draw_atom_labels, draw_cell, make_selection_glyphs,
+    MESH_PROPS,
+)
+from .dialogs import DeleteDialog, FitDialog, GroupPickingDialog, GroupOperationDialog
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +534,14 @@ class CellSetterApp(QMainWindow):
             return
         try:
             self.atoms = ase.io.read(file_name)
+
+            # Read explicit bond connectivity from MOL files so the renderer
+            # doesn't have to guess from distances (avoids spurious bonds).
+            if file_name.lower().endswith('.mol'):
+                bonds = read_mol_bonds(file_name)
+                if bonds:
+                    self.atoms.info['_bond_pairs'] = bonds
+
             cell_params = self.atoms.cell.cellpar()
 
             if np.any(cell_params) and not np.all(cell_params[:3] == 0):

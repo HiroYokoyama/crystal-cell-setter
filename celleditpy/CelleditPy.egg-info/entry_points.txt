@@ -1,2 +1,0 @@
-[console_scripts]
-celleditpy = celleditpy.main:run_app

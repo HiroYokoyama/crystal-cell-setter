@@ -163,6 +163,70 @@ def compute_principal_axis(positions: np.ndarray) -> np.ndarray:
     return vecs[:, np.argmax(vals)].real
 
 
+# ---------------------------------------------------------------------------
+# MOL-file bond reader
+# ---------------------------------------------------------------------------
+
+def read_mol_bonds(filepath: str) -> list:
+    """Parse bond connectivity from a V2000 or V3000 MDL MOL file.
+
+    Returns
+    -------
+    list of (int, int) tuples – zero-based atom index pairs for every bond.
+    Returns an empty list if the file cannot be parsed.
+    """
+    bonds = []
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as fh:
+            lines = fh.readlines()
+
+        # Detect V3000 (extended) vs V2000
+        v3000 = any('V3000' in line for line in lines[:10])
+
+        if v3000:
+            # V3000: bond block between "M  V30 BEGIN BOND" and "M  V30 END BOND"
+            in_bond = False
+            for line in lines:
+                stripped = line.strip()
+                if 'BEGIN BOND' in stripped:
+                    in_bond = True
+                    continue
+                if 'END BOND' in stripped:
+                    break
+                if in_bond and stripped.startswith('M  V30'):
+                    parts = stripped.split()
+                    # format: M  V30  <idx>  <type>  <atom1>  <atom2>  ...
+                    if len(parts) >= 6:
+                        try:
+                            a1 = int(parts[4]) - 1   # 1-based → 0-based
+                            a2 = int(parts[5]) - 1
+                            bonds.append((a1, a2))
+                        except ValueError:
+                            pass
+        else:
+            # V2000: counts line is line index 3 (0-based)
+            if len(lines) < 4:
+                return []
+            counts = lines[3]
+            try:
+                n_atoms = int(counts[0:3])
+                n_bonds = int(counts[3:6])
+            except ValueError:
+                return []
+            bond_start = 4 + n_atoms
+            for i in range(n_bonds):
+                line = lines[bond_start + i] if bond_start + i < len(lines) else ''
+                try:
+                    a1 = int(line[0:3]) - 1   # 1-based → 0-based
+                    a2 = int(line[3:6]) - 1
+                    bonds.append((a1, a2))
+                except (ValueError, IndexError):
+                    pass
+    except Exception as exc:
+        print(f"[geometry] MOL bond parse failed: {exc}")
+    return bonds
+
+
 def apply_rotation_to_atoms(atoms, angle_rad: float, axis: np.ndarray, center: np.ndarray):
     """Rotate *atoms* in-place around *axis* by *angle_rad* about *center*."""
     if abs(angle_rad) < 1e-9:
