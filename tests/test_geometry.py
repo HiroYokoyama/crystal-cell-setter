@@ -4,6 +4,15 @@
 Tests for celleditpy.geometry  (no GUI required).
 """
 
+import sys
+import os
+
+# Ensure the local package is imported, not the installed one.
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_pkg_dir = os.path.join(_repo_root, "celleditpy")
+if _pkg_dir not in sys.path:
+    sys.path.insert(0, _pkg_dir)
+
 import numpy as np
 import pytest
 from ase import Atoms

@@ -22,9 +22,10 @@ MESH_PROPS = dict(smooth_shading=True, specular=0.2, specular_power=20, lighting
 
 
 def _cpk_rgb(symbol: str) -> tuple:
-    """Return (r, g, b) floats for a chemical symbol using CPK colours."""
-    c = CPK_COLORS.get(symbol, CPK_COLORS['DEFAULT'])
-    return (c.redF(), c.greenF(), c.blueF())
+    """Return (r, g, b) floats in [0, 1] for a chemical symbol using CPK colours."""
+    h = CPK_COLORS.get(symbol, CPK_COLORS['DEFAULT']).lstrip('#')
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return (r / 255.0, g / 255.0, b / 255.0)
 
 
 # ---------------------------------------------------------------------------
