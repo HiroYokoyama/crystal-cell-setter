@@ -9,6 +9,7 @@ and dialogs to dialogs.py.
 """
 
 import sys
+import copy
 import numpy as np
 import pyvista as pv
 from scipy.spatial.transform import Rotation
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
     QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QSignalBlocker
+from PyQt6.QtGui import QKeySequence, QShortcut
 from pyvistaqt import QtInteractor
 
 import ase
@@ -79,6 +81,8 @@ class CellSetterApp(QMainWindow):
         self._supercell_params = (False, 1, 1, 1)
         self._plotter_picking_enabled = False
         self._edit_selected_idx = None   # atom selected in Edit tab
+        self._undo_stack = []            # list of atoms snapshots
+        self._redo_stack = []
 
         self._build_ui()
 
@@ -134,6 +138,9 @@ class CellSetterApp(QMainWindow):
 
         self.control_tabs.currentChanged.connect(self._on_tab_changed)
 
+        QShortcut(QKeySequence.StandardKey.Undo, self, self.undo)
+        QShortcut(QKeySequence.StandardKey.Redo, self, self.redo)
+
         main_layout.addWidget(control_panel)
 
         # ---- Right: 3D viewer -------------------------------------------
@@ -163,6 +170,17 @@ class CellSetterApp(QMainWindow):
         self.save_button.clicked.connect(self.save_cif_file)
         self.save_button.setEnabled(False)
         lay.addWidget(self.save_button)
+
+        undo_row = QHBoxLayout()
+        self.undo_button = QPushButton("Undo (Ctrl+Z)")
+        self.undo_button.clicked.connect(self.undo)
+        self.undo_button.setEnabled(False)
+        self.redo_button = QPushButton("Redo (Ctrl+Y)")
+        self.redo_button.clicked.connect(self.redo)
+        self.redo_button.setEnabled(False)
+        undo_row.addWidget(self.undo_button)
+        undo_row.addWidget(self.redo_button)
+        lay.addLayout(undo_row)
 
         lay.addSpacing(20)
         lay.addWidget(QLabel("=== Cell Parameters ==="))
@@ -458,6 +476,15 @@ class CellSetterApp(QMainWindow):
         # ---- Bond editor ---------------------------------------------------
         lay.addWidget(QLabel("=== Bond Editor ==="))
 
+        self._detect_bond_btn = QPushButton("Detect Bonds (auto)")
+        self._detect_bond_btn.setToolTip(
+            "Auto-detect bonds using ASE distance cutoffs (mult=1.15).\n"
+            "Overwrites any existing bond data."
+        )
+        self._detect_bond_btn.clicked.connect(self.detect_bonds)
+        self._detect_bond_btn.setEnabled(False)
+        lay.addWidget(self._detect_bond_btn)
+
         bond_group = QWidget()
         bond_grid = QGridLayout(bond_group)
         bond_grid.setContentsMargins(0, 0, 0, 0)
@@ -544,7 +571,7 @@ class CellSetterApp(QMainWindow):
             self.wrap_button, self.complete_mol_button,
             self.toggle_indices_button, self.reset_camera_button,
             self._set_bond_btn, self._apply_all_btn,
-            self._add_atom_btn,
+            self._add_atom_btn, self._detect_bond_btn,
         ]:
             btn.setEnabled(enabled)
         for btn in self.camera_buttons.values():
@@ -679,6 +706,7 @@ class CellSetterApp(QMainWindow):
             return
         row = self._edit_selected_idx
         try:
+            self._push_undo()
             sym, pos = self._row_to_atom_data(row)
             self.atoms[row].symbol = sym
             self.atoms.positions[row] = pos
@@ -691,6 +719,7 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         try:
+            self._push_undo()
             n_table = self._atom_table.rowCount()
             for row in range(n_table):
                 sym, pos = self._row_to_atom_data(row)
@@ -704,6 +733,7 @@ class CellSetterApp(QMainWindow):
         """Append a new hydrogen atom at the cell centre (or origin)."""
         if self.atoms is None:
             return
+        self._push_undo()
         from ase import Atom as _Atom
         if self.atoms.pbc.any():
             cell = np.array(self.atoms.get_cell())
@@ -723,6 +753,7 @@ class CellSetterApp(QMainWindow):
         n = len(self.atoms)
         if not (0 <= idx < n):
             return
+        self._push_undo()
         mask = np.ones(n, dtype=bool)
         mask[idx] = False
         # Carry forward bond data, removing bonds that referenced this atom
@@ -751,6 +782,7 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         try:
+            self._push_undo()
             i1 = self._bond_idx1.value()
             i2 = self._bond_idx2.value()
             n = len(self.atoms)
@@ -953,6 +985,7 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         try:
+            self._push_undo()
             params = compute_autofit_cell_params(self.atoms)
             self._set_spinbox_values(params)
             new_cell = cellpar_to_cell([
@@ -1125,6 +1158,7 @@ class CellSetterApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "Cell is not set.")
             return
         try:
+            self._push_undo()
             cell = self.atoms.get_cell()
             cell_center = (cell[0] + cell[1] + cell[2]) / 2.0
             shift = cell_center - self.atoms.get_center_of_mass()
@@ -1132,6 +1166,65 @@ class CellSetterApp(QMainWindow):
             self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Shift failed:\n{exc}")
+
+    # ==========================================================================
+    # Undo / Redo
+    # ==========================================================================
+
+    def _push_undo(self):
+        """Snapshot current atoms onto the undo stack; clear redo stack."""
+        if self.atoms is None:
+            return
+        self._undo_stack.append(copy.deepcopy(self.atoms))
+        if len(self._undo_stack) > 50:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+        self.undo_button.setEnabled(True)
+        self.redo_button.setEnabled(False)
+
+    def undo(self):
+        if not self._undo_stack:
+            return
+        self._redo_stack.append(copy.deepcopy(self.atoms))
+        self.atoms = self._undo_stack.pop()
+        self.undo_button.setEnabled(bool(self._undo_stack))
+        self.redo_button.setEnabled(True)
+        self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+
+    def redo(self):
+        if not self._redo_stack:
+            return
+        self._undo_stack.append(copy.deepcopy(self.atoms))
+        self.atoms = self._redo_stack.pop()
+        self.undo_button.setEnabled(True)
+        self.redo_button.setEnabled(bool(self._redo_stack))
+        self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+
+    # ==========================================================================
+    # Bond detection
+    # ==========================================================================
+
+    def detect_bonds(self):
+        """Auto-detect bonds via ASE distance cutoffs and store in atoms.info."""
+        if self.atoms is None:
+            return
+        try:
+            from ase.neighborlist import natural_cutoffs, neighbor_list as _nl
+            self._push_undo()
+            cutoffs = natural_cutoffs(self.atoms, mult=1.15)
+            ii, jj = _nl('ij', self.atoms, cutoffs)
+            seen, pairs, orders = set(), [], []
+            for a, b in zip(ii, jj):
+                key = (min(a, b), max(a, b))
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append(key)
+                    orders.append(1)
+            self.atoms.info['_bond_pairs']  = pairs
+            self.atoms.info['_bond_orders'] = orders
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Bond detection failed:\n{exc}")
 
     def wrap_atoms_into_cell(self):
         """Wrap all atom positions back into the unit cell (fractional coords → [0,1))."""
@@ -1141,6 +1234,7 @@ class CellSetterApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "Cell is not set.")
             return
         try:
+            self._push_undo()
             self.atoms.wrap()
             self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
         except Exception as exc:
@@ -1159,6 +1253,7 @@ class CellSetterApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "Cell is not set.")
             return
         try:
+            self._push_undo()
             from ase.neighborlist import natural_cutoffs, neighbor_list as _nl
             atoms = self.atoms
             cell = atoms.get_cell()
@@ -1207,6 +1302,7 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         try:
+            self._push_undo()
             if self.translate_xyz_radio.isChecked():
                 shift = np.array([sb.value() for sb in self.translate_spinboxes])
             else:
@@ -1223,6 +1319,7 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         try:
+            self._push_undo()
             if self.rotate_xyz_radio.isChecked():
                 angles = [sb.value() for sb in self.rotate_spinboxes]
                 if all(abs(a) < 1e-6 for a in angles):

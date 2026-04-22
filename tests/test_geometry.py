@@ -453,3 +453,132 @@ class TestReadMolBonds:
         pairs, orders = read_mol_bonds(path)
         os.unlink(path)
         assert len(pairs) == len(orders)
+
+# ---------------------------------------------------------------------------
+# detect_bonds helper (mirrors app.detect_bonds logic, no Qt)
+# ---------------------------------------------------------------------------
+
+def _detect_bonds(atoms):
+    """Pure-Python version of app.detect_bonds for unit testing."""
+    from ase.neighborlist import natural_cutoffs, neighbor_list as _nl
+    cutoffs = natural_cutoffs(atoms, mult=1.15)
+    ii, jj = _nl('ij', atoms, cutoffs)
+    seen, pairs, orders = set(), [], []
+    for a, b in zip(ii, jj):
+        key = (min(a, b), max(a, b))
+        if key not in seen:
+            seen.add(key)
+            pairs.append(key)
+            orders.append(1)
+    return pairs, orders
+
+
+class TestDetectBonds:
+    def test_water_has_two_bonds(self):
+        atoms = molecule('H2O')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        pairs, orders = _detect_bonds(atoms)
+        assert len(pairs) == 2
+
+    def test_all_single_order(self):
+        atoms = molecule('CH4')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        _, orders = _detect_bonds(atoms)
+        assert all(o == 1 for o in orders)
+
+    def test_pairs_unique(self):
+        atoms = molecule('H2O')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        pairs, _ = _detect_bonds(atoms)
+        assert len(pairs) == len(set(pairs))
+
+    def test_pairs_normalised(self):
+        """All pairs must be (min, max)."""
+        atoms = molecule('CH4')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        pairs, _ = _detect_bonds(atoms)
+        for a, b in pairs:
+            assert a <= b
+
+    def test_methane_has_four_bonds(self):
+        atoms = molecule('CH4')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        pairs, _ = _detect_bonds(atoms)
+        assert len(pairs) == 4
+
+
+# ---------------------------------------------------------------------------
+# complete_molecule helper (mirrors app.complete_molecule logic, no Qt)
+# ---------------------------------------------------------------------------
+
+def _complete_molecule(atoms):
+    """Pure-Python version of app.complete_molecule for unit testing."""
+    cell = atoms.get_cell()
+    n = len(atoms)
+    from ase.neighborlist import natural_cutoffs, neighbor_list as _nl
+    cutoffs = natural_cutoffs(atoms, mult=1.15)
+    ii, jj = _nl('ij', atoms, cutoffs)
+    adj = {i: [] for i in range(n)}
+    for a, b in zip(ii, jj):
+        adj[a].append(b)
+
+    positions = atoms.positions.copy()
+    visited = np.zeros(n, dtype=bool)
+    for start in range(n):
+        if visited[start]:
+            continue
+        queue = [start]
+        visited[start] = True
+        while queue:
+            i = queue.pop(0)
+            for j in adj[i]:
+                if visited[j]:
+                    continue
+                diff = positions[j] - positions[i]
+                frac = np.linalg.solve(np.array(cell).T, diff)
+                frac -= np.round(frac)
+                positions[j] = positions[i] + frac @ np.array(cell)
+                visited[j] = True
+                queue.append(j)
+    atoms.positions = positions
+
+
+class TestCompleteMolecule:
+    def _split_water(self):
+        """Water molecule with O at origin and H shifted across cell boundary."""
+        atoms = molecule('H2O')
+        atoms.set_cell(np.eye(3) * 5.0)
+        atoms.set_pbc(True)
+        # Shift one H atom across the boundary
+        atoms.positions[1] += np.array([5.0, 0.0, 0.0])
+        return atoms
+
+    def test_bond_length_preserved(self):
+        atoms = self._split_water()
+        d_before = np.linalg.norm(atoms.positions[0] - atoms.positions[1])
+        _complete_molecule(atoms)
+        d_after = np.linalg.norm(atoms.positions[0] - atoms.positions[1])
+        # After completion, bond length should be the original O-H (~0.96 Å)
+        # Before it was artificially ~5 Å; completion brings it back
+        assert d_after < d_before
+
+    def test_all_atoms_visited(self):
+        atoms = molecule('H2O')
+        atoms.set_cell(np.eye(3) * 10.0)
+        atoms.set_pbc(True)
+        original = atoms.positions.copy()
+        _complete_molecule(atoms)
+        # When no atoms are split, positions should be unchanged
+        np.testing.assert_allclose(atoms.positions, original, atol=1e-10)
+
+    def test_anchor_atom_unchanged(self):
+        """First atom (index 0) must never move."""
+        atoms = self._split_water()
+        pos0_before = atoms.positions[0].copy()
+        _complete_molecule(atoms)
+        np.testing.assert_allclose(atoms.positions[0], pos0_before, atol=1e-10)
