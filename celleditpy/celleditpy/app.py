@@ -18,9 +18,9 @@ from PyQt6.QtWidgets import (
     QPushButton, QFileDialog, QLabel, QGridLayout, QDoubleSpinBox,
     QMessageBox, QSizePolicy, QInputDialog, QComboBox,
     QTabWidget, QCheckBox, QButtonGroup, QRadioButton, QLineEdit,
-    QSpinBox,
+    QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSignalBlocker
 from pyvistaqt import QtInteractor
 
 import ase
@@ -151,6 +151,10 @@ class CellSetterApp(QMainWindow):
         lay = self.main_tab_layout
 
         lay.addWidget(QLabel("=== File Operations ==="))
+        self.new_button = QPushButton("New Empty Structure")
+        self.new_button.clicked.connect(self.new_empty_structure)
+        lay.addWidget(self.new_button)
+
         self.load_button = QPushButton("Load File (.mol, .cif)")
         self.load_button.clicked.connect(self.load_mol_file)
         lay.addWidget(self.load_button)
@@ -393,56 +397,70 @@ class CellSetterApp(QMainWindow):
     def _build_edit_tab(self):
         lay = self.edit_tab_layout
 
-        # ---- Atom editor ---------------------------------------------------
-        lay.addWidget(QLabel("=== Atom Editor ==="))
-        lay.addWidget(QLabel("Click an atom in the 3D view to select it."))
+        # ---- Coordinate mode toggle ----------------------------------------
+        mode_row = QHBoxLayout()
+        self._coord_mode = QButtonGroup()
+        self._coord_xyz_radio = QRadioButton("XYZ (Å)")
+        self._coord_abc_radio = QRadioButton("abc (frac)")
+        self._coord_xyz_radio.setChecked(True)
+        self._coord_mode.addButton(self._coord_xyz_radio)
+        self._coord_mode.addButton(self._coord_abc_radio)
+        mode_row.addWidget(self._coord_xyz_radio)
+        mode_row.addWidget(self._coord_abc_radio)
+        lay.addLayout(mode_row)
 
-        self._edit_idx_label = QLabel("Selected: none")
-        lay.addWidget(self._edit_idx_label)
+        self._coord_xyz_radio.toggled.connect(self._refresh_atom_table)
+        self._coord_abc_radio.toggled.connect(self._refresh_atom_table)
 
-        elem_row = QHBoxLayout()
-        elem_row.addWidget(QLabel("Element:"))
-        self._edit_elem_combo = QComboBox()
-        self._edit_elem_combo.setEditable(True)
-        self._edit_elem_combo.addItems([
-            'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne',
-            'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar',
-            'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn',
-            'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr',
-            'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
-            'In', 'Sn', 'Sb', 'Te', 'I', 'Xe',
-            'Cs', 'Ba', 'La', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg',
-            'Tl', 'Pb', 'Bi',
-        ])
-        elem_row.addWidget(self._edit_elem_combo)
-        lay.addLayout(elem_row)
+        # ---- Atom table ----------------------------------------------------
+        self._atom_table = QTableWidget(0, 5)
+        self._atom_table.setHorizontalHeaderLabels(['#', 'Elem', 'x/a', 'y/b', 'z/c'])
+        self._atom_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._atom_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._atom_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._atom_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._atom_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self._atom_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._atom_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._atom_table.verticalHeader().setVisible(False)
+        self._atom_table.setMinimumHeight(220)
+        self._atom_table.itemSelectionChanged.connect(self._on_table_row_selected)
+        lay.addWidget(self._atom_table)
 
-        frac_group = QWidget()
-        frac_grid = QGridLayout(frac_group)
-        frac_grid.addWidget(QLabel("Fractional position (0–1):"), 0, 0, 1, 2)
-        self._edit_frac_spins = []
-        for i, label in enumerate(['a', 'b', 'c']):
-            sb = QDoubleSpinBox()
-            sb.setRange(0.0, 1.0)
-            sb.setDecimals(5)
-            sb.setSingleStep(0.01)
-            frac_grid.addWidget(QLabel(f"{label}:"), i + 1, 0)
-            frac_grid.addWidget(sb, i + 1, 1)
-            self._edit_frac_spins.append(sb)
-        lay.addWidget(frac_group)
-
-        self._apply_atom_btn = QPushButton("Apply Atom Changes")
-        self._apply_atom_btn.clicked.connect(self._apply_atom_edit)
+        # ---- Atom action buttons -------------------------------------------
+        atom_btn_row = QHBoxLayout()
+        self._apply_atom_btn = QPushButton("Apply Row")
+        self._apply_atom_btn.setToolTip("Apply changes to the selected row")
+        self._apply_atom_btn.clicked.connect(self._apply_selected_row)
         self._apply_atom_btn.setEnabled(False)
-        lay.addWidget(self._apply_atom_btn)
 
-        lay.addSpacing(16)
+        self._apply_all_btn = QPushButton("Apply All")
+        self._apply_all_btn.setToolTip("Apply changes to all rows")
+        self._apply_all_btn.clicked.connect(self._apply_all_rows)
+        self._apply_all_btn.setEnabled(False)
+
+        self._add_atom_btn = QPushButton("Add Atom")
+        self._add_atom_btn.clicked.connect(self._add_atom_row)
+        self._add_atom_btn.setEnabled(False)
+
+        self._remove_atom_btn = QPushButton("Remove Row")
+        self._remove_atom_btn.clicked.connect(self._remove_selected_atom)
+        self._remove_atom_btn.setEnabled(False)
+
+        atom_btn_row.addWidget(self._apply_atom_btn)
+        atom_btn_row.addWidget(self._apply_all_btn)
+        atom_btn_row.addWidget(self._add_atom_btn)
+        atom_btn_row.addWidget(self._remove_atom_btn)
+        lay.addLayout(atom_btn_row)
+
+        lay.addSpacing(10)
 
         # ---- Bond editor ---------------------------------------------------
         lay.addWidget(QLabel("=== Bond Editor ==="))
 
         bond_group = QWidget()
         bond_grid = QGridLayout(bond_group)
+        bond_grid.setContentsMargins(0, 0, 0, 0)
 
         bond_grid.addWidget(QLabel("Atom 1:"), 0, 0)
         self._bond_idx1 = QSpinBox()
@@ -450,17 +468,17 @@ class CellSetterApp(QMainWindow):
         self._bond_idx1.setMaximum(9999)
         bond_grid.addWidget(self._bond_idx1, 0, 1)
 
-        bond_grid.addWidget(QLabel("Atom 2:"), 1, 0)
+        bond_grid.addWidget(QLabel("Atom 2:"), 0, 2)
         self._bond_idx2 = QSpinBox()
         self._bond_idx2.setMinimum(0)
         self._bond_idx2.setMaximum(9999)
-        bond_grid.addWidget(self._bond_idx2, 1, 1)
+        bond_grid.addWidget(self._bond_idx2, 0, 3)
 
-        bond_grid.addWidget(QLabel("Order:"), 2, 0)
+        bond_grid.addWidget(QLabel("Order:"), 1, 0)
         self._bond_order_combo = QComboBox()
         self._bond_order_combo.addItems(['None (remove)', 'Single', 'Double', 'Triple'])
         self._bond_order_combo.setCurrentIndex(1)
-        bond_grid.addWidget(self._bond_order_combo, 2, 1)
+        bond_grid.addWidget(self._bond_order_combo, 1, 1, 1, 3)
 
         lay.addWidget(bond_group)
 
@@ -525,7 +543,8 @@ class CellSetterApp(QMainWindow):
             self.fit_to_cell_button, self.delete_atom_button,
             self.wrap_button, self.complete_mol_button,
             self.toggle_indices_button, self.reset_camera_button,
-            self._set_bond_btn,
+            self._set_bond_btn, self._apply_all_btn,
+            self._add_atom_btn,
         ]:
             btn.setEnabled(enabled)
         for btn in self.camera_buttons.values():
@@ -534,6 +553,7 @@ class CellSetterApp(QMainWindow):
             sb.setEnabled(enabled)
         if not enabled:
             self._apply_atom_btn.setEnabled(False)
+            self._remove_atom_btn.setEnabled(False)
 
     # ==========================================================================
     # Supercell
@@ -571,62 +591,161 @@ class CellSetterApp(QMainWindow):
         if self.atoms is None:
             return
         if tab_idx == self._EDIT_TAB_INDEX:
+            self._refresh_atom_table()
             self.picking_callback = self._on_edit_atom_picked
             self.enable_plot_picking()
         else:
             if self.picking_callback is self._on_edit_atom_picked:
                 self.picking_callback = None
 
-    def _on_edit_atom_picked(self, idx: int):
-        self._edit_selected_idx = idx
-        sym = self.atoms[idx].symbol
-        self._edit_idx_label.setText(f"Selected: atom {idx}  ({sym})")
-        self._edit_elem_combo.setCurrentText(sym)
+    # -- table population ----------------------------------------------------
 
-        # Fractional coordinates
-        if self.atoms.pbc.any():
-            frac = self.atoms.get_scaled_positions()[idx]
-        else:
-            cell = self.atoms.get_cell()
-            cell_array = np.array(cell)
-            if np.linalg.matrix_rank(cell_array) == 3:
-                frac = np.linalg.solve(cell_array.T, self.atoms.positions[idx])
+    def _refresh_atom_table(self):
+        """Rebuild the atom table from self.atoms."""
+        if self.atoms is None:
+            return
+        use_frac = self._coord_abc_radio.isChecked()
+        cell = np.array(self.atoms.get_cell())
+        has_cell = self.atoms.pbc.any() and np.linalg.matrix_rank(cell) == 3
+
+        with QSignalBlocker(self._atom_table):
+            self._atom_table.setRowCount(len(self.atoms))
+            if use_frac:
+                self._atom_table.setHorizontalHeaderLabels(['#', 'Elem', 'a', 'b', 'c'])
             else:
-                frac = np.zeros(3)
+                self._atom_table.setHorizontalHeaderLabels(['#', 'Elem', 'x (Å)', 'y (Å)', 'z (Å)'])
 
-        for sb, v in zip(self._edit_frac_spins, frac):
-            sb.blockSignals(True)
-            sb.setValue(float(np.clip(v, 0.0, 1.0)))
-            sb.blockSignals(False)
+            for row, atom in enumerate(self.atoms):
+                # Index (read-only)
+                idx_item = QTableWidgetItem(str(row))
+                idx_item.setFlags(idx_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self._atom_table.setItem(row, 0, idx_item)
 
-        # Pre-fill bond idx1 with the selected atom for convenience
+                # Element
+                self._atom_table.setItem(row, 1, QTableWidgetItem(atom.symbol))
+
+                # Coordinates
+                if use_frac and has_cell:
+                    coords = np.linalg.solve(cell.T, atom.position)
+                else:
+                    coords = atom.position
+                for col, val in enumerate(coords, start=2):
+                    self._atom_table.setItem(row, col, QTableWidgetItem(f"{val:.6f}"))
+
+        self._atom_table.resizeRowsToContents()
+
+    def _on_edit_atom_picked(self, idx: int):
+        """Highlight the picked atom's row in the table."""
+        self._edit_selected_idx = idx
+        self._atom_table.selectRow(idx)
+        self._atom_table.scrollToItem(self._atom_table.item(idx, 0))
         self._bond_idx1.setValue(idx)
         self._apply_atom_btn.setEnabled(True)
+        self._remove_atom_btn.setEnabled(True)
         self.draw_selection_markers([idx])
 
-    def _apply_atom_edit(self):
+    def _on_table_row_selected(self):
+        rows = self._atom_table.selectionModel().selectedRows()
+        if not rows or self.atoms is None:
+            return
+        idx = rows[0].row()
+        if idx < len(self.atoms):
+            self._edit_selected_idx = idx
+            self._apply_atom_btn.setEnabled(True)
+            self._remove_atom_btn.setEnabled(True)
+            self._bond_idx1.setValue(idx)
+            self.draw_selection_markers([idx])
+
+    # -- row apply / add / remove --------------------------------------------
+
+    def _row_to_atom_data(self, row: int):
+        """Parse one table row → (symbol, position_cartesian). Raises ValueError."""
+        from ase import Atom as _Atom
+        sym = (self._atom_table.item(row, 1) or QTableWidgetItem('')).text().strip().capitalize()
+        _Atom(sym)   # validates symbol
+        coords = []
+        for col in range(2, 5):
+            txt = (self._atom_table.item(row, col) or QTableWidgetItem('0')).text()
+            coords.append(float(txt))
+        coords = np.array(coords)
+        if self._coord_abc_radio.isChecked() and self.atoms.pbc.any():
+            cell = np.array(self.atoms.get_cell())
+            if np.linalg.matrix_rank(cell) == 3:
+                coords = coords @ cell
+        return sym, coords
+
+    def _apply_selected_row(self):
+        if self._edit_selected_idx is None or self.atoms is None:
+            return
+        row = self._edit_selected_idx
+        try:
+            sym, pos = self._row_to_atom_data(row)
+            self.atoms[row].symbol = sym
+            self.atoms.positions[row] = pos
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+            self.draw_selection_markers([row])
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Row {row}: {exc}")
+
+    def _apply_all_rows(self):
+        if self.atoms is None:
+            return
+        try:
+            n_table = self._atom_table.rowCount()
+            for row in range(n_table):
+                sym, pos = self._row_to_atom_data(row)
+                self.atoms[row].symbol = sym
+                self.atoms.positions[row] = pos
+            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Apply all failed:\n{exc}")
+
+    def _add_atom_row(self):
+        """Append a new hydrogen atom at the cell centre (or origin)."""
+        if self.atoms is None:
+            return
+        from ase import Atom as _Atom
+        if self.atoms.pbc.any():
+            cell = np.array(self.atoms.get_cell())
+            pos = (cell[0] + cell[1] + cell[2]) / 2.0
+        else:
+            pos = np.zeros(3)
+        self.atoms.append(_Atom('H', position=pos))
+        self._refresh_atom_table()
+        last = len(self.atoms) - 1
+        self._atom_table.selectRow(last)
+        self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
+
+    def _remove_selected_atom(self):
         if self._edit_selected_idx is None or self.atoms is None:
             return
         idx = self._edit_selected_idx
-        try:
-            new_sym = self._edit_elem_combo.currentText().strip().capitalize()
-            # Validate symbol via ASE
-            from ase import Atom as _Atom
-            _Atom(new_sym)
-            self.atoms[idx].symbol = new_sym
-
-            # Convert fractional → Cartesian
-            cell = np.array(self.atoms.get_cell())
-            frac = np.array([sb.value() for sb in self._edit_frac_spins])
-            self.atoms.positions[idx] = frac @ cell
-
-            self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
-            self._edit_idx_label.setText(
-                f"Selected: atom {idx}  ({new_sym})  — applied"
-            )
-            self.draw_selection_markers([idx])
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to apply atom edit:\n{exc}")
+        n = len(self.atoms)
+        if not (0 <= idx < n):
+            return
+        mask = np.ones(n, dtype=bool)
+        mask[idx] = False
+        # Carry forward bond data, removing bonds that referenced this atom
+        if self.atoms.info.get('_bond_pairs'):
+            pairs  = self.atoms.info['_bond_pairs']
+            orders = self.atoms.info.get('_bond_orders', [1] * len(pairs))
+            new_pairs, new_orders = [], []
+            for (a, b), o in zip(pairs, orders):
+                if a == idx or b == idx:
+                    continue
+                # Re-index
+                a2 = a - (1 if a > idx else 0)
+                b2 = b - (1 if b > idx else 0)
+                new_pairs.append((a2, b2))
+                new_orders.append(o)
+            self.atoms.info['_bond_pairs']  = new_pairs
+            self.atoms.info['_bond_orders'] = new_orders
+        self.atoms = self.atoms[mask]
+        self._edit_selected_idx = None
+        self._apply_atom_btn.setEnabled(False)
+        self._remove_atom_btn.setEnabled(False)
+        self._refresh_atom_table()
+        self.draw_scene_manually(force_reset=False, cell_center=np.zeros(3))
 
     def _set_bond(self):
         if self.atoms is None:
@@ -747,6 +866,21 @@ class CellSetterApp(QMainWindow):
     # ==========================================================================
     # File operations
     # ==========================================================================
+
+    def new_empty_structure(self):
+        """Create an empty Atoms object and activate the cell + Edit tab."""
+        from ase import Atoms as _Atoms
+        from ase.geometry import cellpar_to_cell
+        p = {name: sb.value() for name, sb in self.param_inputs.items()}
+        cell = cellpar_to_cell([p['a'], p['b'], p['c'],
+                                 p['alpha'], p['beta'], p['gamma']])
+        self.atoms = _Atoms(cell=cell, pbc=True)
+        self._enable_controls(True)
+        self.enable_plot_picking()
+        self.draw_scene_manually(force_reset=True, cell_center=np.zeros(3))
+        self.reset_camera_view()
+        # Jump straight to Edit tab so user can start adding atoms
+        self.control_tabs.setCurrentIndex(self._EDIT_TAB_INDEX)
 
     def load_mol_file(self):
         file_name, _ = QFileDialog.getOpenFileName(
@@ -933,6 +1067,10 @@ class CellSetterApp(QMainWindow):
         else:
             self.plotter.camera = self.camera_state
             self.plotter.camera.focal_point = visual_center
+
+        # Keep Edit tab table in sync
+        if self.control_tabs.currentIndex() == self._EDIT_TAB_INDEX:
+            self._refresh_atom_table()
 
     def reset_camera_view(self):
         if self.atoms is None:
