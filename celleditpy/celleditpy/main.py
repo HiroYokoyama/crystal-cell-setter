@@ -37,10 +37,13 @@ if __package__:
 else:
     # Script mode: add the directory that *contains* the celleditpy package
     # (i.e. two levels up from this file) so absolute imports resolve.
-    _here = os.path.dirname(os.path.abspath(__file__))          # .../celleditpy/
-    _root = os.path.dirname(os.path.dirname(_here))             # project root
-    if _root not in sys.path:
-        sys.path.insert(0, _root)
+    # Structure: <repo>/celleditpy/celleditpy/main.py
+    # _here  = <repo>/celleditpy/celleditpy/
+    # _pkg_parent = <repo>/celleditpy/   ← dir that *contains* the celleditpy package
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _pkg_parent = os.path.dirname(_here)
+    if _pkg_parent not in sys.path:
+        sys.path.insert(0, _pkg_parent)
     from celleditpy.app import CellSetterApp                    # absolute import
 
 

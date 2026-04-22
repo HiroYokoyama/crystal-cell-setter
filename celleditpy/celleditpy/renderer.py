@@ -66,56 +66,102 @@ def draw_atoms(plotter, atoms_to_draw) -> None:
     plotter.add_mesh(glyphs, scalars='colors', rgb=True, **MESH_PROPS)
 
 
-def draw_bonds(plotter, atoms_to_draw) -> None:
-    """Render chemical bonds as grey tubes (stick model).
+_BOND_RADIUS   = 0.10   # Å – tube radius for single bonds
+_DOUBLE_OFFSET = 0.14   # Å – half-separation between double-bond tubes
+_TRIPLE_OFFSET = 0.16   # Å – half-separation between outer triple-bond tubes
 
-    Uses explicit bond pairs stored in ``atoms_to_draw.info['_bond_pairs']``
-    (set when loading a MOL file) when available.  Falls back to
-    distance-based detection (ASE NeighborList) for CIF and other formats.
+
+def _perpendicular_to(vec: np.ndarray) -> np.ndarray:
+    """Return an arbitrary unit vector perpendicular to *vec*."""
+    ref = np.array([0.0, 0.0, 1.0])
+    perp = np.cross(vec, ref)
+    if np.linalg.norm(perp) < 1e-6:
+        perp = np.cross(vec, np.array([0.0, 1.0, 0.0]))
+    return perp / np.linalg.norm(perp)
+
+
+def _add_tube(plotter, p1: np.ndarray, p2: np.ndarray, radius: float = _BOND_RADIUS) -> None:
+    mesh = pv.PolyData(np.array([p1, p2]))
+    mesh.lines = np.array([2, 0, 1])
+    plotter.add_mesh(mesh.tube(radius=radius, n_sides=12), color='grey', **MESH_PROPS)
+
+
+def draw_bonds(plotter, atoms_to_draw) -> None:
+    """Render bonds as grey tubes with proper single / double / triple geometry.
+
+    Bond source priority
+    --------------------
+    1. ``atoms_to_draw.info['_bond_pairs']`` + ``'_bond_orders'``
+       – set when loading a MOL file; encodes exact connectivity and bond order.
+    2. ASE NeighborList distance heuristic – fallback for CIF and other formats
+       (all bonds drawn as single).
     """
     positions = atoms_to_draw.get_positions()
     if len(positions) < 2:
         return
 
     try:
-        # --- Prefer explicit connectivity from the source file --------------
-        explicit = atoms_to_draw.info.get('_bond_pairs') if hasattr(atoms_to_draw, 'info') else None
-        if explicit:
-            # Filter out-of-range indices (can happen after atom deletion)
-            n = len(positions)
-            pairs = [(i, j) for i, j in explicit if 0 <= i < n and 0 <= j < n and i != j]
-            # Deduplicate (keep i < j)
-            seen = set()
-            rows, cols = [], []
-            for i, j in pairs:
+        info = getattr(atoms_to_draw, 'info', {}) or {}
+        explicit_pairs  = info.get('_bond_pairs')
+        explicit_orders = info.get('_bond_orders')
+        n = len(positions)
+
+        if explicit_pairs:
+            # Build deduplicated (i, j, order) list from stored data
+            seen = {}
+            for k, (i, j) in enumerate(explicit_pairs):
+                if not (0 <= i < n and 0 <= j < n and i != j):
+                    continue
                 key = (min(i, j), max(i, j))
+                order = explicit_orders[k] if explicit_orders and k < len(explicit_orders) else 1
                 if key not in seen:
-                    seen.add(key)
-                    rows.append(key[0])
-                    cols.append(key[1])
+                    seen[key] = order
+            bond_list = [(i, j, o) for (i, j), o in seen.items()]
         else:
-            # --- Distance-based fallback (CIF / no explicit bonds) ----------
-            cutoffs = natural_cutoffs(atoms_to_draw)
+            # Distance-based fallback – all bonds are order 1.
+            # mult=1.15 adds 15 % slack so strained/elongated bonds (e.g.
+            # cyclobutadiene C–C single at 1.57 Å) are not missed.
+            cutoffs = natural_cutoffs(atoms_to_draw, mult=1.15)
             nl = NeighborList(cutoffs, self_interaction=False, bothways=True)
             nl.update(atoms_to_draw)
             coo = nl.get_connectivity_matrix().tocoo()
             if coo.nnz == 0:
                 return
             mask = coo.row < coo.col
-            rows = coo.row[mask].tolist()
-            cols = coo.col[mask].tolist()
+            bond_list = [
+                (int(r), int(c), 1)
+                for r, c in zip(coo.row[mask], coo.col[mask])
+            ]
 
-        if not rows:
+        if not bond_list:
             return
 
-        lines = np.empty((len(rows), 3), dtype=int)
-        lines[:, 0] = 2
-        lines[:, 1] = rows
-        lines[:, 2] = cols
-        bond_mesh = pv.PolyData(positions)
-        bond_mesh.lines = lines.flatten()
-        tube = bond_mesh.tube(radius=0.10, n_sides=16)
-        plotter.add_mesh(tube, color='grey', **MESH_PROPS)
+        for i, j, order in bond_list:
+            p1, p2 = positions[i], positions[j]
+            bond_dir = p2 - p1
+            length = np.linalg.norm(bond_dir)
+            if length < 1e-6:
+                continue
+            bond_dir /= length
+
+            if order == 1 or order > 3:
+                # Single bond (or aromatic drawn single)
+                _add_tube(plotter, p1, p2)
+
+            elif order == 2:
+                # Double bond – two parallel tubes offset perpendicular to bond
+                perp = _perpendicular_to(bond_dir)
+                offset = perp * _DOUBLE_OFFSET
+                _add_tube(plotter, p1 + offset, p2 + offset)
+                _add_tube(plotter, p1 - offset, p2 - offset)
+
+            elif order == 3:
+                # Triple bond – one central tube + two offset tubes
+                perp = _perpendicular_to(bond_dir)
+                offset = perp * _TRIPLE_OFFSET
+                _add_tube(plotter, p1, p2)
+                _add_tube(plotter, p1 + offset, p2 + offset, radius=_BOND_RADIUS * 0.8)
+                _add_tube(plotter, p1 - offset, p2 - offset, radius=_BOND_RADIUS * 0.8)
 
     except Exception as exc:
         print(f"[renderer] bond drawing failed: {exc}")

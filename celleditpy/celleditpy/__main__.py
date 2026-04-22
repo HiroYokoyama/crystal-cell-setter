@@ -1,30 +1,26 @@
 """
-``python -m celleditpy``  entry point.
+Entry point for ``python -m celleditpy``.
 
-Python executes this file when the package is invoked as a module::
-
-    python -m celleditpy
-
-This is the preferred way to run the app without installing it (i.e. from a
-source checkout with the package directory on sys.path).  The installed CLI
-command ``celleditpy`` uses the ``[project.scripts]`` entry point defined in
-``pyproject.toml`` (``celleditpy.main:run_app``), which is equivalent.
-
-Summary of invocation methods
-------------------------------
-+-----------------------------------+------------------+
-| Command                           | How it works     |
-+===================================+==================+
-| ``celleditpy``                    | pyproject.toml   |
-|                                   | entry-point      |
-+-----------------------------------+------------------+
-| ``python -m celleditpy``          | __main__.py      |
-+-----------------------------------+------------------+
-| ``python celleditpy/main.py``     | __package__ fix  |
-|                                   | in main.py       |
-+-----------------------------------+------------------+
+Invocation methods
+------------------
+``celleditpy``              installed CLI  (pyproject.toml [project.scripts])
+``python -m celleditpy``   module mode    (this file, __package__ is set)
+``python __main__.py``     direct script  (__package__ guard fixes imports)
+``python main.py``         direct script  (main.py has its own guard)
 """
 
-from .main import run_app
+import sys
+import os
+
+# When executed as `python -m celleditpy` __package__ == 'celleditpy'.
+# When executed as `python __main__.py`   __package__ is None/empty.
+if __package__:
+    from .main import run_app
+else:
+    _here = os.path.dirname(os.path.abspath(__file__))  # .../celleditpy/celleditpy/
+    _pkg_parent = os.path.dirname(_here)                # .../celleditpy/  (contains the package)
+    if _pkg_parent not in sys.path:
+        sys.path.insert(0, _pkg_parent)
+    from celleditpy.main import run_app
 
 run_app()

@@ -536,11 +536,12 @@ class CellSetterApp(QMainWindow):
             self.atoms = ase.io.read(file_name)
 
             # Read explicit bond connectivity from MOL files so the renderer
-            # doesn't have to guess from distances (avoids spurious bonds).
+            # uses exact connectivity + bond orders instead of distance heuristics.
             if file_name.lower().endswith('.mol'):
-                bonds = read_mol_bonds(file_name)
-                if bonds:
-                    self.atoms.info['_bond_pairs'] = bonds
+                pairs, orders = read_mol_bonds(file_name)
+                if pairs:
+                    self.atoms.info['_bond_pairs']  = pairs
+                    self.atoms.info['_bond_orders'] = orders
 
             cell_params = self.atoms.cell.cellpar()
 
@@ -640,6 +641,21 @@ class CellSetterApp(QMainWindow):
         if use_supercell and (n_a > 1 or n_b > 1 or n_c > 1):
             try:
                 atoms_draw = make_supercell(self.atoms, np.diag([n_a, n_b, n_c]))
+                # make_supercell does not copy info – carry bond data forward so
+                # the renderer can use explicit connectivity for the supercell.
+                if self.atoms.info.get('_bond_pairs'):
+                    pairs  = self.atoms.info['_bond_pairs']
+                    orders = self.atoms.info.get('_bond_orders', [1] * len(pairs))
+                    n_orig = len(self.atoms)
+                    n_reps = n_a * n_b * n_c
+                    sc_pairs, sc_orders = [], []
+                    for rep in range(n_reps):
+                        off = rep * n_orig
+                        for (i, j), o in zip(pairs, orders):
+                            sc_pairs.append((i + off, j + off))
+                            sc_orders.append(o)
+                    atoms_draw.info['_bond_pairs']  = sc_pairs
+                    atoms_draw.info['_bond_orders'] = sc_orders
             except Exception as exc:
                 print(f"[app] Supercell error: {exc}")
                 atoms_draw = self.atoms
