@@ -157,11 +157,11 @@ class CellSetterApp(QMainWindow):
         self.param_inputs = {}
         params_info = {
             'a':     (10.0,  1.0, 1000.0, 0.1),
-            'alpha': (90.0,  0.0,  180.0, 1.0),
+            'alpha': (90.0, 10.0,  170.0, 1.0),
             'b':     (10.0,  1.0, 1000.0, 0.1),
-            'beta':  (90.0,  0.0,  180.0, 1.0),
+            'beta':  (90.0, 10.0,  170.0, 1.0),
             'c':     (10.0,  1.0, 1000.0, 0.1),
-            'gamma': (90.0,  0.0,  180.0, 1.0),
+            'gamma': (90.0, 10.0,  170.0, 1.0),
         }
         row = col = 0
         for name, (default, lo, hi, step) in params_info.items():
@@ -621,7 +621,7 @@ class CellSetterApp(QMainWindow):
             self.atoms.set_pbc(True)
             self.draw_scene_manually(force_reset=force_reset, cell_center=np.zeros(3))
         except Exception as exc:
-            print(f"[app] Cell parameter error: {exc}")
+            QMessageBox.critical(self, "Cell Error", f"Invalid cell parameters:\n{exc}")
 
     # ==========================================================================
     # Scene drawing
