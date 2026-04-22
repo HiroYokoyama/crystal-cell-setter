@@ -109,6 +109,12 @@ class CellSetterApp(QMainWindow):
         self.main_tab_layout.setSpacing(6)
         self.control_tabs.addTab(self.main_tab, "Main")
 
+        self.edit_tab = QWidget()
+        self.edit_tab_layout = QVBoxLayout(self.edit_tab)
+        self.edit_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.edit_tab_layout.setSpacing(6)
+        self.control_tabs.addTab(self.edit_tab, "Edit")
+
         self.group_tab = QWidget()
         self.group_tab_layout = QVBoxLayout(self.group_tab)
         self.group_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -121,16 +127,10 @@ class CellSetterApp(QMainWindow):
         self.view_tab_layout.setSpacing(6)
         self.control_tabs.addTab(self.view_tab, "View")
 
-        self.edit_tab = QWidget()
-        self.edit_tab_layout = QVBoxLayout(self.edit_tab)
-        self.edit_tab_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.edit_tab_layout.setSpacing(6)
-        self.control_tabs.addTab(self.edit_tab, "Edit")
-
         self._build_main_tab()
+        self._build_edit_tab()
         self._build_structure_tab()
         self._build_view_tab()
-        self._build_edit_tab()
 
         self.control_tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -585,7 +585,7 @@ class CellSetterApp(QMainWindow):
     # Edit tab: tab-switch, atom pick, apply, bond set
     # ==========================================================================
 
-    _EDIT_TAB_INDEX = 3
+    _EDIT_TAB_INDEX = 1
 
     def _on_tab_changed(self, tab_idx: int):
         if self.atoms is None:
